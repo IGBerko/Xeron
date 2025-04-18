@@ -1,0 +1,1469 @@
+<script type="text/javascript">
+        var gk_isXlsx = false;
+        var gk_xlsxFileLookup = {};
+        var gk_fileData = {};
+        function filledCell(cell) {
+          return cell !== '' && cell != null;
+        }
+        function loadFileData(filename) {
+        if (gk_isXlsx && gk_xlsxFileLookup[filename]) {
+            try {
+                var workbook = XLSX.read(gk_fileData[filename], { type: 'base64' });
+                var firstSheetName = workbook.SheetNames[0];
+                var worksheet = workbook.Sheets[firstSheetName];
+
+                // Convert sheet to JSON to filter blank rows
+                var jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1, blankrows: false, defval: '' });
+                // Filter out blank rows (rows where all cells are empty, null, or undefined)
+                var filteredData = jsonData.filter(row => row.some(filledCell));
+
+                // Heuristic to find the header row by ignoring rows with fewer filled cells than the next row
+                var headerRowIndex = filteredData.findIndex((row, index) =>
+                  row.filter(filledCell).length >= filteredData[index + 1]?.filter(filledCell).length
+                );
+                // Fallback
+                if (headerRowIndex === -1 || headerRowIndex > 25) {
+                  headerRowIndex = 0;
+                }
+
+                // Convert filtered JSON back to CSV
+                var csv = XLSX.utils.aoa_to_sheet(filteredData.slice(headerRowIndex)); // Create a new sheet from filtered array of arrays
+                csv = XLSX.utils.sheet_to_csv(csv, { header: 1 });
+                return csv;
+            } catch (e) {
+                console.error(e);
+                return "";
+            }
+        }
+        return gk_fileData[filename] || "";
+        }
+        </script>
+        <!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>XeronOS</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    :root {
+      --bg-color: #f0f0f0;
+      --text-color: #333;
+      --window-bg: #ffffff;
+      --window-border: #ccc;
+      --header-bg: #0078d4;
+      --header-text: #ffffff;
+      --taskbar-bg: #333;
+      --taskbar-text: #ffffff;
+      --shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    }
+    [data-theme="dark"] {
+      --bg-color: #1a1a1a;
+      --text-color: #e0e0e0;
+      --window-bg: #2a2a2a;
+      --window-border: #444;
+      --header-bg: #005a9e;
+      --header-text: #e0e0e0;
+      --taskbar-bg: #222;
+      --taskbar-text: #e0e0e0;
+      --shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+    }
+    body {
+      margin: 0;
+      height: 100vh;
+      overflow: hidden;
+      background: var(--bg-color);
+      color: var(--text-color);
+      font-family: 'Segoe UI', sans-serif;
+      transition: background 0.3s, color 0.3s;
+    }
+    .desktop {
+      height: calc(100vh - 40px);
+      position: relative;
+      background-size: cover;
+      background-position: center;
+      transition: background 0.5s;
+    }
+    .icon {
+      text-align: center;
+      color: var(--text-color);
+      cursor: pointer;
+      margin: 15px;
+      display: inline-block;
+      transition: transform 0.2s;
+    }
+    .icon:hover {
+      transform: scale(1.1);
+    }
+    .icon svg {
+      width: 48px;
+      height: 48px;
+      fill: var(--text-color);
+    }
+    .window {
+      position: absolute;
+      background: var(--window-bg);
+      border: 1px solid var(--window-border);
+      box-shadow: var(--shadow);
+      min-width: 300px;
+      min-height: 200px;
+      resize: both;
+      overflow: auto;
+      opacity: 0;
+      transform: scale(0.8);
+      transition: opacity 0.3s, transform 0.3s;
+    }
+    .window.open {
+      opacity: 1;
+      transform: scale(1);
+    }
+    .window-header {
+      background: var(--header-bg);
+      color: var(--header-text);
+      padding: 5px;
+      border-bottom: 1px solid var(--window-border);
+      cursor: move;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 14px;
+    }
+    .window-buttons span {
+      width: 16px;
+      height: 16px;
+      display: inline-block;
+      margin: 0 2px;
+      text-align: center;
+      line-height: 16px;
+      font-size: 12px;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+    .close { background: #c00; color: white; }
+    .minimize { background: #666; color: white; }
+    .maximize { background: #666; color: white; }
+    .taskbar {
+      position: fixed;
+      bottom: 0;
+      width: 100%;
+      background: var(--taskbar-bg);
+      color: var(--taskbar-text);
+      padding: 5px;
+      height: 40px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      transition: background 0.3s, color 0.3s;
+    }
+    .start-menu {
+      position: absolute;
+      bottom: 40px;
+      left: 5px;
+      background: var(--window-bg);
+      border: 1px solid var(--window-border);
+      box-shadow: var(--shadow);
+      display: none;
+      opacity: 0;
+      transform: translateY(10px);
+      transition: opacity 0.3s, transform 0.3s;
+    }
+    .start-menu.open {
+      display: block;
+      opacity: 1;
+      transform: translateY(0);
+    }
+    .start-menu ul {
+      list-style: none;
+      padding: 10px;
+      margin: 0;
+    }
+    .start-menu ul li {
+      padding: 5px 10px;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+    .start-menu ul li:hover {
+      background: var(--window-border);
+    }
+    .context-menu {
+      position: fixed;
+      background: var(--window-bg);
+      border: 1px solid var(--window-border);
+      box-shadow: var(--shadow);
+      display: none;
+      z-index: 1000;
+    }
+    .context-menu ul {
+      list-style: none;
+      padding: 5px;
+      margin: 0;
+    }
+    .context-menu ul li {
+      padding: 5px 10px;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+    .context-menu ul li:hover {
+      background: var(--window-border);
+    }
+    .terminal-input {
+      width: 100%;
+      border: none;
+      background: #000;
+      color: #0f0;
+      padding: 5px;
+      font-family: 'Courier New', monospace;
+      outline: none;
+    }
+    .terminal-output {
+      background: #000;
+      color: #0f0;
+      padding: 10px;
+      height: 150px;
+      overflow-y: auto;
+      font-family: 'Courier New', monospace;
+    }
+    .browser-bar {
+      display: flex;
+      padding: 5px;
+      border-bottom: 1px solid var(--window-border);
+    }
+    .browser-bar input {
+      flex: 1;
+      margin: 0 5px;
+      padding: 3px;
+      background: var(--window-bg);
+      color: var(--text-color);
+      border: 1px solid var(--window-border);
+    }
+    .settings-content input {
+      margin: 10px;
+      padding: 5px;
+      border: 1px solid var(--window-border);
+      background: var(--window-bg);
+      color: var(--text-color);
+    }
+    .file-manager-bar {
+      display: flex;
+      padding: 5px;
+      border-bottom: 1px solid var(--window-border);
+    }
+    .file-manager-bar span {
+      flex: 1;
+      margin: 0 5px;
+      padding: 3px;
+    }
+    .file-manager-content {
+      padding: 10px;
+      height: 150px;
+      overflow-y: auto;
+    }
+    .file-manager-content div {
+      padding: 5px;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+    .file-manager-content div:hover {
+      background: var(--window-border);
+    }
+    .offixel-content, .textpro-content, .presento-content, .notepad-content, .be-content {
+      padding: 10px;
+      height: 150px;
+      overflow-y: auto;
+    }
+    .offixel-grid {
+      display: grid;
+      grid-template-columns: repeat(10, 60px);
+      gap: 1px;
+      background: #ccc;
+    }
+    .offixel-grid input {
+      width: 100%;
+      height: 30px;
+      border: none;
+      padding: 5px;
+      background: var(--window-bg);
+      color: var(--text-color);
+    }
+    .textpro-content textarea, .notepad-content textarea {
+      width: 100%;
+      height: 100%;
+      background: var(--window-bg);
+      color: var(--text-color);
+      border: 1px solid var(--window-border);
+      resize: none;
+    }
+    .presento-content {
+      text-align: center;
+    }
+    .presento-content canvas {
+      border: 1px solid var(--window-border);
+      background: white;
+    }
+    .paint-content {
+      padding: 10px;
+      height: 150px;
+      overflow: hidden;
+    }
+    .paint-content canvas {
+      border: 1px solid var(--window-border);
+      background: white;
+    }
+    .paint-tools, .offixel-tools, .textpro-tools, .presento-tools, .be-tools {
+      display: flex;
+      padding: 5px;
+      border-bottom: 1px solid var(--window-border);
+    }
+    .paint-tools button, .offixel-tools button, .textpro-tools button, .presento-tools button, .be-tools button {
+      margin: 0 5px;
+      padding: 3px 8px;
+      background: var(--window-bg);
+      color: var(--text-color);
+      border: 1px solid var(--window-border);
+      cursor: pointer;
+    }
+    .notification {
+      position: fixed;
+      bottom: 50px;
+      right: 20px;
+      background: var(--window-bg);
+      border: 1px solid var(--window-border);
+      padding: 10px;
+      box-shadow: var(--shadow);
+      opacity: 0;
+      transition: opacity 0.3s;
+    }
+    .notification.show {
+      opacity: 1;
+    }
+  </style>
+</head>
+<body>
+  <div class="desktop" id="desktop">
+    <div class="icon" ondblclick="openWindow('Terminal')">
+      <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+        <path d="M21 3H3c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h18c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H3V5h18v14zM5 7l1.5 1.5L5 10l-1-1 1.5-1.5zm4 6H7v-2h2v2zm8-2h-6V9h6v2zm0 4h-6v-2h6v2z"/>
+      </svg>
+      <div>Terminal</div>
+    </div>
+    <div class="icon" ondblclick="openWindow('Browser')">
+      <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+        <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zm-5-9h10v2H7v-2zm0 4h7v2H7v-2z"/>
+      </svg>
+      <div>Browser</div>
+    </div>
+    <div class="icon" ondblclick="openWindow('XeronFS')">
+      <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+        <path d="M22 6c0-1.1-.9-2-2-2H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6zm-2 0l-8 5-8-5h16zm0 12H4V8l8 5 8-5v10z"/>
+      </svg>
+      <div>XeronFS</div>
+    </div>
+    <div class="icon" ondblclick="openWindow('Settings')">
+      <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+        <path d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.06-.94l2.03-1.58c.18-.14.23-.41.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54c-.04-.24-.24-.41-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.56-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.06.94l-2.03 1.58c-.18.14-.23.41-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.48-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.08-.47-.12-.61l-2.03-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z"/>
+      </svg>
+      <div>Settings</div>
+    </div>
+    <div class="icon" ondblclick="openWindow('OffixeL')">
+      <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+        <path d="M3 3h18v18H3V3zm2 2v14h14V5H5zm2 2h10v2H7V7zm0 4h10v2H7v-2zm0 4h10v2H7v-2z"/>
+      </svg>
+      <div>OffixeL</div>
+    </div>
+    <div class="icon" ondblclick="openWindow('TextPro')">
+      <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+        <path d="M14.6 3.6l-3.2 1.9c-.4.2-.6.6-.6 1v11c0 .4.2.8.6 1l3.2 1.9c.4.2.8.2 1.2 0l6.4-3.7c.4-.2.6-.6.6-1V7.3c0-.4-.2-.8-.6-1l-6.4-3.7c-.4-.2-.8-.2-1.2 0zM3 6h6v2H3V6zm0 5h6v2H3v-2zm0 5h6v2H3v-2z"/>
+      </svg>
+      <div>TextPro</div>
+    </div>
+    <div class="icon" ondblclick="openWindow('Presento')">
+      <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+        <path d="M3 3h18v18H3V3zm2 2v14h14V5H5zm4 4h6v2H9V9zm0 4h6v2H9V-2z"/>
+      </svg>
+      <div>Presento</div>
+    </div>
+    <div class="icon" ondblclick="openWindow('Paint')">
+      <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+        <path d="M18 4h-2l-2 2v4l2 2h2V4zm-4 8H6v2h8v-2zm0 4H6v2h8v-2zM4 4h2v14H4V4zm16 12h-2v2h2v-2z"/>
+      </svg>
+      <div>Paint</div>
+    </div>
+    <div class="icon" ondblclick="openWindow('Notepad')">
+      <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+        <path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-1 16H6V5h12v14zM8 7h8v2H8V7zm0 4h8v2H8v-2zm0 4h8v2H8v-2z"/>
+      </svg>
+      <div>Notepad</div>
+    </div>
+  </div>
+  <div class="taskbar">
+    <button class="start-button bg-gray-700 hover:bg-gray-600 text-white font-bold py-1 px-2" onclick="toggleStartMenu()">Start</button>
+    <div id="clock" class="text-white"></div>
+  </div>
+  <div class="start-menu" id="startMenu">
+    <ul>
+      <li onclick="openWindow('Terminal')">Terminal</li>
+      <li onclick="openWindow('Browser')">Browser</li>
+      <li onclick="openWindow('XeronFS')">XeronFS</li>
+      <li onclick="openWindow('Settings')">Settings</li>
+      <li onclick="openWindow('OffixeL')">OffixeL</li>
+      <li onclick="openWindow('TextPro')">TextPro</li>
+      <li onclick="openWindow('Presento')">Presento</li>
+      <li onclick="openWindow('Paint')">Paint</li>
+      <li onclick="openWindow('Notepad')">Notepad</li>
+      <li onclick="openWindow('Be')">Be</li>
+      <li onclick="toggleTheme()">Toggle Theme</li>
+      <li onclick="alert('Shutting down...')">Shut Down</li>
+    </ul>
+  </div>
+  <div class="context-menu" id="desktopContextMenu">
+    <ul>
+      <li onclick="createNew('file')">New File</li>
+      <li onclick="createNew('folder')">New Folder</li>
+    </ul>
+  </div>
+  <div class="context-menu" id="fileContextMenu">
+    <ul>
+      <li onclick="openFile()">Open</li>
+      <li onclick="renameFile()">Rename</li>
+      <li onclick="deleteFile()">Delete</li>
+    </ul>
+  </div>
+
+  <script>
+    let fileSystem = {
+      'C:': {
+        'Users': {
+          'user': {
+            'apps': {
+              'red': {}
+            },
+            'Programm Files': {
+              'Itry': {
+                'Browser.exe': 'Browser'
+              }
+            }
+          }
+        },
+        'WebOs': {
+          'terminal.exe': 'Terminal',
+          'settings.exe': 'Settings',
+          'FS.exe': 'XeronFS',
+          'offixel.exe': 'OffixeL',
+          'textpro.exe': 'TextPro',
+          'presento.exe': 'Presento',
+          'paint.exe': 'Paint',
+          'notepad.exe': 'Notepad'
+        }
+      }
+    };
+    let currentPath = 'C:/Users/user/apps/red';
+    let currentFileManagerId = null;
+    let notificationsEnabled = true;
+    let notificationDuration = 3000;
+
+    const packages = {
+      'terminal': { name: 'Terminal', exe: 'terminal.exe', installed: true },
+      'browser': { name: 'Browser', exe: 'Browser.exe', installed: true },
+      'xeronfs': { name: 'XeronFS', exe: 'FS.exe', installed: true },
+      'settings': { name: 'Settings', exe: 'settings.exe', installed: true },
+      'offixel': { name: 'OffixeL', exe: 'offixel.exe', installed: true },
+      'textpro': { name: 'TextPro', exe: 'textpro.exe', installed: true },
+      'presento': { name: 'Presento', exe: 'presento.exe', installed: true },
+      'paint': { name: 'Paint', exe: 'paint.exe', installed: true },
+      'notepad': { name: 'Notepad', exe: 'notepad.exe', installed: true },
+      'be': { name: 'Be', exe: 'be.exe', installed: false }
+    };
+
+    function isValidPath(path) {
+      if (!path || path === 'C:') return true;
+      const pathParts = path.split('/').filter(p => p);
+      let current = fileSystem;
+      for (const part of pathParts) {
+        if (!current[part] || typeof current[part] !== 'object') {
+          return false;
+        }
+        current = current[part];
+      }
+      return true;
+    }
+
+    function showNotification(message) {
+      if (!notificationsEnabled) return;
+      const notification = document.createElement('div');
+      notification.className = 'notification';
+      notification.textContent = message;
+      document.body.appendChild(notification);
+      setTimeout(() => notification.classList.add('show'), 10);
+      setTimeout(() => {
+        notification.classList.remove('show');
+        setTimeout(() => notification.remove(), 300);
+      }, notificationDuration);
+    }
+
+    function openWindow(type, fileName = '') {
+      const windowDiv = document.createElement('div');
+      windowDiv.className = 'window';
+      windowDiv.style.top = '100px';
+      windowDiv.style.left = '100px';
+      let content = '';
+      if (type === 'Terminal') {
+        content = `
+          <div class="terminal-output" id="terminalOutput${Date.now()}"></div>
+          <input type="text" class="terminal-input" id="terminalInput${Date.now()}" onkeydown="handleTerminalInput(event, this)">
+        `;
+      } else if (type === 'Browser') {
+        content = `
+          <div class="browser-bar">
+            <button onclick="goBack(this)">←</button>
+            <input type="text" id="urlInput${Date.now()}" placeholder="Enter URL">
+            <button onclick="loadPage(this)">Go</button>
+          </div>
+          <div class="browser-content" id="browserContent${Date.now()}">Enter a URL to browse...</div>
+        `;
+      } else if (type === 'XeronFS') {
+        currentFileManagerId = `fileManager${Date.now()}`;
+        content = `
+          <div class="file-manager-bar">
+            <button onclick="goUp()">↑</button>
+            <span id="pathDisplay${currentFileManagerId}">${currentPath}</span>
+          </div>
+          <div class="file-manager-content" id="${currentFileManagerId}"></div>
+        `;
+      } else if (type === 'Settings') {
+        content = `
+          <div class="settings-content p-4">
+            <p>System Version: XeronOS v3</p>
+            <p>Change Wallpaper:</p>
+            <input type="text" id="wallpaperInput${Date.now()}" placeholder="Enter image URL">
+            <button onclick="changeWallpaper(this)">Apply</button>
+            <p>Manage Programs:</p>
+            <div id="programList${Date.now()}"></div>
+            <p>App Store:</p>
+            <div id="appStore${Date.now()}"></div>
+            <p>Notifications:</p>
+            <label><input type="checkbox" id="notifyToggle${Date.now()}" ${notificationsEnabled ? 'checked' : ''} onchange="toggleNotifications(this)"> Enable Notifications</label>
+            <p>Notification Duration (ms):</p>
+            <input type="number" id="notifyDuration${Date.now()}" value="${notificationDuration}">
+            <button onclick="setNotificationDuration(this)">Set</button>
+          </div>
+        `;
+      } else if (type === 'OffixeL') {
+        const fileContent = fileName ? getFileContent(fileName) : '';
+        content = `
+          <div class="offixel-tools">
+            <button onclick="calculateSheet(this)">Calculate</button>
+            <button onclick="saveFile(this, '${fileName}', 'xlsx')">Save</button>
+          </div>
+          <div class="offixel-content">
+            <div class="offixel-grid" id="offixelGrid${Date.now()}">${fileContent || createGrid()}</div>
+          </div>
+        `;
+      } else if (type === 'TextPro') {
+        const fileContent = fileName ? getFileContent(fileName) : '';
+        content = `
+          <div class="textpro-tools">
+            <button onclick="formatText(this, 'bold')">Bold</button>
+            <button onclick="formatText(this, 'italic')">Italic</button>
+            <button onclick="saveFile(this, '${fileName}', 'docx')">Save</button>
+          </div>
+          <div class="textpro-content">
+            <textarea id="textproText${Date.now()}">${fileContent}</textarea>
+          </div>
+        `;
+      } else if (type === 'Presento') {
+        const fileContent = fileName ? getFileContent(fileName) : '';
+        content = `
+          <div class="presento-tools">
+            <button onclick="addSlide(this)">Add Slide</button>
+            <button onclick="saveFile(this, '${fileName}', 'pptx')">Save</button>
+          </div>
+          <div class="presento-content">
+            <canvas id="presentoCanvas${Date.now()}" width="280" height="140"></canvas>
+            <p>${fileContent || 'Slide 1'}</p>
+          </div>
+        `;
+      } else if (type === 'Paint') {
+        content = `
+          <div class="paint-tools">
+            <button onclick="setColor('black', this)">Black</button>
+            <button onclick="setColor('red', this)">Red</button>
+            <button onclick="setColor('blue', this)">Blue</button>
+            <button onclick="setBrushSize('small', this)">Small</button>
+            <button onclick="setBrushSize('medium', this)">Medium</button>
+            <button onclick="setBrushSize('large', this)">Large</button>
+            <button onclick="setShape('line', this)">Line</button>
+            <button onclick="setShape('rect', this)">Rectangle</button>
+            <button onclick="setShape('circle', this)">Circle</button>
+            <button onclick="undo(this)">Undo</button>
+            <button onclick="redo(this)">Redo</button>
+            <button onclick="clearCanvas(this)">Clear</button>
+            <button onclick="saveCanvas(this)">Save</button>
+          </div>
+          <div class="paint-content">
+            <canvas id="paintCanvas${Date.now()}" width="280" height="140"></canvas>
+          </div>
+        `;
+      } else if (type === 'Notepad') {
+        const fileContent = fileName ? getFileContent(fileName) : '';
+        content = `
+          <div class="notepad-content">
+            <textarea id="notepadText${Date.now()}">${fileContent}</textarea>
+            <button onclick="saveFile(this, '${fileName}', 'txt')">Save</button>
+          </div>
+        `;
+      } else if (type === 'Be') {
+        content = `
+          <div class="be-tools">
+            <p>Be App Store</p>
+          </div>
+          <div class="be-content" id="beStore${Date.now()}"></div>
+        `;
+      } else {
+        content = `<div class="window-content p-4"><p>Welcome to ${type}!</p></div>`;
+      }
+      windowDiv.innerHTML = `
+        <div class="window-header">
+          <span>${type}${fileName ? `: ${fileName}` : ''}</span>
+          <div class="window-buttons">
+            <span class="minimize" onclick="this.parentElement.parentElement.parentElement.style.display='none'">-</span>
+            <span class="maximize" onclick="toggleMaximize(this.parentElement.parentElement.parentElement)">□</span>
+            <span class="close" onclick="closeWindow(this.parentElement.parentElement.parentElement)">✕</span>
+          </div>
+        </div>
+        ${content}
+      `;
+      document.querySelector('.desktop').appendChild(windowDiv);
+      makeDraggable(windowDiv);
+      setTimeout(() => windowDiv.classList.add('open'), 10);
+      if (type === 'Terminal') {
+        windowDiv.querySelector('.terminal-input').focus();
+      } else if (type === 'XeronFS') {
+        updateFileManager();
+      } else if (type === 'Paint') {
+        initializeCanvas(windowDiv.querySelector('canvas'));
+      } else if (type === 'Settings') {
+        updateProgramList(windowDiv.querySelector(`#programList${Date.now()}`));
+        updateAppStore(windowDiv.querySelector(`#appStore${Date.now()}`));
+      } else if (type === 'OffixeL') {
+        initializeGrid(windowDiv.querySelector(`#offixelGrid${Date.now()}`));
+      } else if (type === 'Presento') {
+        initializePresento(windowDiv.querySelector(`#presentoCanvas${Date.now()}`));
+      } else if (type === 'Be') {
+        updateBeStore(windowDiv.querySelector(`#beStore${Date.now()}`));
+      }
+      showNotification(`${type} opened`);
+    }
+
+    function closeWindow(window) {
+      window.classList.remove('open');
+      setTimeout(() => window.remove(), 300);
+    }
+
+    function toggleMaximize(window) {
+      if (window.style.width === '100%') {
+        window.style.width = '300px';
+        window.style.height = '200px';
+        window.style.top = '100px';
+        window.style.left = '100px';
+      } else {
+        window.style.width = '100%';
+        window.style.height = '90%';
+        window.style.top = '0';
+        window.style.left = '0';
+      }
+    }
+
+    function makeDraggable(element) {
+      const header = element.querySelector('.window-header');
+      let isDragging = false;
+      let currentX = 0;
+      let currentY = 0;
+      let initialX;
+      let initialY;
+
+      header.addEventListener('mousedown', (e) => {
+        initialX = e.clientX - currentX;
+        initialY = e.clientY - currentY;
+        isDragging = true;
+      });
+
+      document.addEventListener('mousemove', (e) => {
+        if (isDragging) {
+          e.preventDefault();
+          currentX = e.clientX - initialX;
+          currentY = e.clientY - initialY;
+          element.style.left = currentX + 'px';
+          element.style.top = currentY + 'px';
+        }
+      });
+
+      document.addEventListener('mouseup', () => {
+        isDragging = false;
+      });
+    }
+
+    function showContextMenu(id, x, y, target = null) {
+      const menu = document.getElementById(id);
+      menu.style.left = `${x}px`;
+      menu.style.top = `${y}px`;
+      menu.style.display = 'block';
+      menu.dataset.target = target ? target.dataset.name : '';
+      document.addEventListener('click', hideContextMenus);
+    }
+
+    function hideContextMenus() {
+      document.querySelectorAll('.context-menu').forEach(menu => {
+        menu.style.display = 'none';
+      });
+      document.removeEventListener('click', hideContextMenus);
+    }
+
+    document.querySelector('.desktop').addEventListener('contextmenu', (e) => {
+      e.preventDefault();
+      showContextMenu('desktopContextMenu', e.clientX, e.clientY);
+    });
+
+    function createNew(type) {
+      const name = prompt(`Enter ${type} name:`);
+      if (name) {
+        const pathParts = currentPath.split('/').filter(p => p);
+        let current = fileSystem;
+        for (const part of pathParts) {
+          if (!current[part]) {
+            console.error(`Path part ${part} not found in fileSystem`);
+            currentPath = 'C:/Users/user/apps/red';
+            updateFileManager();
+            return;
+          }
+          current = current[part];
+        }
+        current[name] = type === 'folder' ? {} : '';
+        updateFileManager();
+      }
+      hideContextMenus();
+    }
+
+    function getFileContent(fileName) {
+      const pathParts = currentPath.split('/').filter(p => p);
+      let current = fileSystem;
+      for (const part of pathParts) {
+        if (!current[part]) return '';
+        current = current[part];
+      }
+      return typeof current[fileName] === 'string' ? current[fileName] : '';
+    }
+
+    function saveFile(button, fileName, ext) {
+      let content;
+      let type;
+      if (button.parentElement.classList.contains('offixel-tools')) {
+        content = serializeGrid(button.parentElement.nextElementSibling.querySelector('.offixel-grid'));
+        type = 'xlsx';
+      } else if (button.parentElement.classList.contains('textpro-tools')) {
+        content = button.parentElement.nextElementSibling.querySelector('textarea').value;
+        type = 'docx';
+      } else if (button.parentElement.classList.contains('presento-tools')) {
+        content = button.parentElement.nextElementSibling.querySelector('p').textContent;
+        type = 'pptx';
+      } else if (button.parentElement.classList.contains('notepad-content')) {
+        content = button.previousElementSibling.value;
+        type = 'txt';
+      } else if (button.parentElement.classList.contains('paint-tools')) {
+        content = button.parentElement.nextElementSibling.querySelector('canvas').toDataURL();
+        type = 'png';
+      }
+      let name = fileName;
+      if (!name) {
+        name = prompt(`Enter file name (.${ext}):`);
+        if (!name) return;
+        if (!name.endsWith(`.${ext}`)) name += `.${ext}`;
+      }
+      const pathParts = currentPath.split('/').filter(p => p);
+      let current = fileSystem;
+      for (const part of pathParts) {
+        if (!current[part]) {
+          showNotification('Path no longer exists!');
+          currentPath = 'C:/Users/user/apps/red';
+          updateFileManager();
+          return;
+        }
+        current = current[part];
+      }
+      current[name] = content;
+      updateFileManager();
+      showNotification(`Saved ${name}`);
+    }
+
+    function openFile() {
+      const menu = document.getElementById('fileContextMenu');
+      const name = menu.dataset.target;
+      const pathParts = currentPath.split('/').filter(p => p);
+      let current = fileSystem;
+      for (const part of pathParts) {
+        if (!current[part]) {
+          showNotification('Path no longer exists!');
+          currentPath = 'C:/Users/user/apps/red';
+          updateFileManager();
+          return;
+        }
+        current = current[part];
+      }
+      if (typeof current[name] === 'object') {
+        currentPath = currentPath === 'C:' ? `C:/${name}` : `${currentPath}/${name}`;
+        if (!isValidPath(currentPath)) {
+          showNotification('Invalid path!');
+          currentPath = 'C:/Users/user/apps/red';
+        }
+        updateFileManager();
+      } else {
+        const app = current[name];
+        if (app === 'Terminal' || app === 'Browser' || app === 'XeronFS' || app === 'Settings' || app === 'OffixeL' || app === 'TextPro' || app === 'Presento' || app === 'Paint' || app === 'Notepad' || app === 'Be') {
+          openWindow(app);
+        } else if (name.endsWith('.txt')) {
+          openWindow('Notepad', name);
+        } else if (name.endsWith('.xlsx')) {
+          openWindow('OffixeL', name);
+        } else if (name.endsWith('.docx')) {
+          openWindow('TextPro', name);
+        } else if (name.endsWith('.pptx')) {
+          openWindow('Presento', name);
+        } else if (name.endsWith('.png')) {
+          openWindow('Paint', name);
+        } else {
+          showNotification(`Opening ${name}...`);
+        }
+      }
+      hideContextMenus();
+    }
+
+    function renameFile() {
+      const menu = document.getElementById('fileContextMenu');
+      const oldName = menu.dataset.target;
+      const newName = prompt('Enter new name:', oldName);
+      if (newName && newName !== oldName) {
+        const pathParts = currentPath.split('/').filter(p => p);
+        let current = fileSystem;
+        for (const part of pathParts) {
+          if (!current[part]) {
+            showNotification('Path no longer exists!');
+            currentPath = 'C:/Users/user/apps/red';
+            updateFileManager();
+            return;
+          }
+          current = current[part];
+        }
+        current[newName] = current[oldName];
+        delete current[oldName];
+        updateFileManager();
+      }
+      hideContextMenus();
+    }
+
+    function deleteFile() {
+      const menu = document.getElementById('fileContextMenu');
+      const name = menu.dataset.target;
+      if (confirm(`Delete ${name}?`)) {
+        const pathParts = currentPath.split('/').filter(p => p);
+        let current = fileSystem;
+        for (const part of pathParts) {
+          if (!current[part]) {
+            showNotification('Path no longer exists!');
+            currentPath = 'C:/Users/user/apps/red';
+            updateFileManager();
+            return;
+          }
+          current = current[part];
+        }
+        delete current[name];
+        updateFileManager();
+      }
+      hideContextMenus();
+    }
+
+    function updateFileManager() {
+      if (!currentFileManagerId) {
+        console.error('currentFileManagerId is not set');
+        return;
+      }
+      const contentDiv = document.getElementById(currentFileManagerId);
+      if (!contentDiv) {
+        console.error(`File manager content div not found: ${currentFileManagerId}`);
+        return;
+      }
+      const pathDisplay = document.getElementById(`pathDisplay${currentFileManagerId}`);
+      if (!pathDisplay) {
+        console.error(`Path display not found: pathDisplay${currentFileManagerId}`);
+        return;
+      }
+
+      if (!isValidPath(currentPath)) {
+        console.warn(`Invalid path: ${currentPath}, resetting to desktop`);
+        currentPath = 'C:/Users/user/apps/red';
+      }
+
+      pathDisplay.textContent = currentPath;
+      const pathParts = currentPath.split('/').filter(p => p);
+      let current = fileSystem;
+      for (const part of pathParts) {
+        if (!current[part]) {
+          console.error(`Path part ${part} not found, resetting path`);
+          currentPath = 'C:/Users/user/apps/red';
+          pathDisplay.textContent = currentPath;
+          current = fileSystem['C:']['Users']['user']['apps']['red'];
+          break;
+        }
+        current = current[part];
+      }
+
+      contentDiv.innerHTML = '';
+      if (!current || typeof current !== 'object') {
+        contentDiv.innerHTML = '<div>No files or folders found.</div>';
+        return;
+      }
+
+      for (const name in current) {
+        const isFolder = typeof current[name] === 'object';
+        const itemDiv = document.createElement('div');
+        itemDiv.textContent = name;
+        itemDiv.dataset.name = name;
+        itemDiv.addEventListener('dblclick', () => {
+          if (isFolder) {
+            currentPath = currentPath === 'C:' ? `C:/${name}` : `${currentPath}/${name}`;
+            if (!isValidPath(currentPath)) {
+              showNotification('Invalid path!');
+              currentPath = 'C:/Users/user/apps/red';
+            }
+            updateFileManager();
+          } else {
+            const app = current[name];
+            if (app === 'Terminal' || app === 'Browser' || app === 'XeronFS' || app === 'Settings' || app === 'OffixeL' || app === 'TextPro' || app === 'Presento' || app === 'Paint' || app === 'Notepad' || app === 'Be') {
+              openWindow(app);
+            } else if (name.endsWith('.txt')) {
+              openWindow('Notepad', name);
+            } else if (name.endsWith('.xlsx')) {
+              openWindow('OffixeL', name);
+            } else if (name.endsWith('.docx')) {
+              openWindow('TextPro', name);
+            } else if (name.endsWith('.pptx')) {
+              openWindow('Presento', name);
+            } else if (name.endsWith('.png')) {
+              openWindow('Paint', name);
+            } else {
+              showNotification(`Opening ${name}...`);
+            }
+          }
+        });
+        itemDiv.addEventListener('contextmenu', (e) => {
+          e.preventDefault();
+          showContextMenu('fileContextMenu', e.clientX, e.clientY, itemDiv);
+        });
+        contentDiv.appendChild(itemDiv);
+      }
+      if (Object.keys(current).length === 0) {
+        contentDiv.innerHTML = '<div>No files or folders found.</div>';
+      }
+    }
+
+    function goUp() {
+      if (currentPath !== 'C:') {
+        const parts = currentPath.split('/').filter(p => p);
+        parts.pop();
+        currentPath = parts.length ? `C:/${parts.join('/')}` : 'C:';
+        if (!isValidPath(currentPath)) {
+          console.warn(`Invalid path after goUp: ${currentPath}, resetting to desktop`);
+          currentPath = 'C:/Users/user/apps/red';
+        }
+        updateFileManager();
+      }
+    }
+
+    function handleTerminalInput(event, input) {
+      if (event.key === 'Enter') {
+        const command = input.value.trim().toLowerCase();
+        const outputDiv = input.previousElementSibling;
+        let output = '';
+        const args = command.split(' ');
+        const cmd = args[0];
+        if (cmd === 'help') {
+          output = 'Available commands: help, dir, clear, kreno, open, version, notify';
+        } else if (cmd === 'dir') {
+          const pathParts = currentPath.split('/').filter(p => p);
+          let current = fileSystem;
+          for (const part of pathParts) {
+            if (!current[part]) {
+              output = 'Directory not found!';
+              break;
+            }
+            current = current[part];
+          }
+          if (current) {
+            output = Object.keys(current).join('  ') || 'dir empty';
+          }
+        } else if (cmd === 'clear') {
+          outputDiv.innerHTML = '';
+        } else if (cmd === 'kreno' && args[1]) {
+          if (args[1] === 'install' && args[2]) {
+            output = installPackage(args[2]);
+          } else if (args[1] === 'remove' && args[2]) {
+            output = removePackage(args[2]);
+          } else if (args[1] === 'list') {
+            output = Object.keys(packages).map(p => `${p} (${packages[p].installed ? 'installed' : 'not installed'})`).join('\n');
+          } else {
+            output = `Invalid kreno command: ${args[1]}`;
+          }
+        } else if (cmd === 'open' && args[1]) {
+          const app = args[1].toLowerCase();
+          const appMap = {
+            'terminal': 'Terminal',
+            'browser': 'Browser',
+            'xeronfs': 'XeronFS',
+            'settings': 'Settings',
+            'offixel': 'OffixeL',
+            'textpro': 'TextPro',
+            'presento': 'Presento',
+            'paint': 'Paint',
+            'notepad': 'Notepad',
+            'be': 'Be'
+          };
+          if (appMap[app]) {
+            openWindow(appMap[app]);
+            output = `Opening ${appMap[app]}...`;
+          } else {
+            output = `Application not found: ${app}`;
+          }
+        } else if (cmd === 'version') {
+          output = 'XeronOS v1.0.0';
+        } else if (cmd === 'notify' && args[1]) {
+          const message = args.slice(1).join(' ');
+          showNotification(message);
+          output = `Notification sent: ${message}`;
+        } else {
+          output = `Command not recognized: ${command}`;
+        }
+        outputDiv.innerHTML += `<p>> ${input.value}</p><p>${output}</p>`;
+        outputDiv.scrollTop = outputDiv.scrollHeight;
+        input.value = '';
+      }
+    }
+
+    function installPackage(packageName) {
+      if (!packages[packageName]) {
+        return `Package not found: ${packageName}`;
+      }
+      if (packages[packageName].installed) {
+        return `Package already installed: ${packageName}`;
+      }
+      packages[packageName].installed = true;
+      const pkg = packages[packageName];
+      let exePath = `C:/WebOs/${pkg.exe}`;
+      if (packageName === 'browser') {
+        exePath = `C:/Users/user/Programm Files/Itry/${pkg.exe}`;
+      }
+      const pathParts = exePath.split('/').filter(p => p).slice(0, -1);
+      let current = fileSystem;
+      for (const part of pathParts) {
+        if (!current[part]) current[part] = {};
+        current = current[part];
+      }
+      current[pkg.exe] = pkg.name;
+      updateFileManager();
+      updateDesktop();
+      updateStartMenu();
+      showNotification(`Installed ${packageName}`);
+      return `Installed ${packageName}`;
+    }
+
+    function removePackage(packageName) {
+      if (!packages[packageName]) {
+        return `Package not found: ${packageName}`;
+      }
+      if (!packages[packageName].installed) {
+        return `Package not installed: ${packageName}`;
+      }
+      packages[packageName].installed = false;
+      const pkg = packages[packageName];
+      let exePath = `C:/WebOs/${pkg.exe}`;
+      if (packageName === 'browser') {
+        exePath = `C:/Users/user/Programm Files/Itry/${pkg.exe}`;
+      }
+      const pathParts = exePath.split('/').filter(p => p).slice(0, -1);
+      let current = fileSystem;
+      for (const part of pathParts) {
+        if (!current[part]) return `Path not found: ${exePath}`;
+        current = current[part];
+      }
+      delete current[pkg.exe];
+      updateFileManager();
+      updateDesktop();
+      updateStartMenu();
+      showNotification(`Removed ${packageName}`);
+      return `Removed ${packageName}`;
+    }
+
+    function updateDesktop() {
+      const desktop = document.getElementById('desktop');
+      const icons = {
+        'Terminal': '<svg viewBox="0 0 24 24"><path d="M21 3H3c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h18c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H3V5h18v14zM5 7l1.5 1.5L5 10l-1-1 1.5-1.5zm4 6H7v-2h2v2zm8-2h-6V9h6v2zm0 4h-6v-2h6v2z"/></svg>',
+        'Browser': '<svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zm-5-9h10v2H7v-2zm0 4h7v2H7v-2z"/></svg>',
+        'XeronFS': '<svg viewBox="0 0 24 24"><path d="M22 6c0-1.1-.9-2-2-2H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6zm-2 0l-8 5-8-5h16zm0 12H4V8l8 5 8-5v10z"/></svg>',
+        'Settings': '<svg viewBox="0 0 24 24"><path d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.06-.94l2.03-1.58c.18-.14.23-.41.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54c-.04-.24-.24-.41-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13-.56-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.06.94l-2.03 1.58c-.18.14-.23.41-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.48-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.08-.47-.12-.61l-2.03-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z"/></svg>',
+        'OffixeL': '<svg viewBox="0 0 24 24"><path d="M3 3h18v18H3V3zm2 2v14h14V5H5zm2 2h10v2H7V7zm0 4h10v2H7v-2zm0 4h10v2H7v-2z"/></svg>',
+        'TextPro': '<svg viewBox="0 0 24 24"><path d="M14.6 3.6l-3.2 1.9c-.4.2-.6.6-.6 1v11c0 .4.2.8.6 1l3.2 1.9c.4.2.8.2 1.2 0l6.4-3.7c.4-.2.6-.6.6-1V7.3c0-.4-.2-.8-.6-1l-6.4-3.7c-.4-.2-.8-.2-1.2 0zM3 6h6v2H3V6zm0 5h6v2H3v-2zm0 5h6v2H3v-2z"/></svg>',
+        'Presento': '<svg viewBox="0 0 24 24"><path d="M3 3h18v18H3V3zm2 2v14h14V5H5zm4 4h6v2H9V9zm0 4h6v2H9v-2z"/></svg>',
+        'Paint': '<svg viewBox="0 0 24 24"><path d="M18 4h-2l-2 2v4l2 2h2V4zm-4 8H6v2h8v-2zm0 4H6v2h8v-2zM4 4h2v14H4V4zm16 12h-2v2h2v-2z"/></svg>',
+        'Notepad': '<svg viewBox="0 0 24 24"><path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-1 16H6V5h12v14zM8 7h8v2H8V7zm0 4h8v2H8v-2zm0 4h8v2H8v-2z"/></svg>',
+        'Be': '<svg viewBox="0 0 24 24"><path d="M3 3h18v18H3V3zm2 2v14h14V5H5zm4 2h6v10H9V7z"/></svg>'
+      };
+      desktop.innerHTML = '';
+      for (const pkg in packages) {
+        if (packages[pkg].installed) {
+          const iconDiv = document.createElement('div');
+          iconDiv.className = 'icon';
+          iconDiv.setAttribute('ondblclick', `openWindow('${packages[pkg].name}')`);
+          iconDiv.innerHTML = `${icons[packages[pkg].name]}<div>${packages[pkg].name}</div>`;
+          desktop.appendChild(iconDiv);
+        }
+      }
+    }
+
+    function updateStartMenu() {
+      const startMenu = document.getElementById('startMenu');
+      const ul = startMenu.querySelector('ul');
+      ul.innerHTML = '';
+      for (const pkg in packages) {
+        if (packages[pkg].installed) {
+          ul.innerHTML += `<li onclick="openWindow('${packages[pkg].name}')">${packages[pkg].name}</li>`;
+        }
+      }
+      ul.innerHTML += `
+        <li onclick="toggleTheme()">Toggle Theme</li>
+        <li onclick="alert('Shutting down...')">Shut Down</li>
+      `;
+    }
+
+    function updateProgramList(div) {
+      div.innerHTML = '';
+      for (const pkg in packages) {
+        const status = packages[pkg].installed ? 'Installed' : 'Not Installed';
+        const button = packages[pkg].installed
+          ? `<button onclick="removePackage('${pkg}')">Uninstall</button>`
+          : `<button onclick="installPackage('${pkg}')">Install</button>`;
+        div.innerHTML += `<p>${pkg} (${status}) ${button}</p>`;
+      }
+    }
+
+    function updateAppStore(div) {
+      div.innerHTML = '<p>Available Apps:</p>';
+      for (const pkg in packages) {
+        const button = packages[pkg].installed
+          ? 'Installed'
+          : `<button onclick="installPackage('${pkg}')">Install</button>`;
+        div.innerHTML += `<p>${pkg} ${button}</p>`;
+      }
+    }
+
+    function updateBeStore(div) {
+      div.innerHTML = '<p>Be App Store:</p>';
+      for (const pkg in packages) {
+        const button = packages[pkg].installed
+          ? 'Installed'
+          : `<button onclick="installPackage('${pkg}')">Install</button>`;
+        div.innerHTML += `<p>${pkg} ${button}</p>`;
+      }
+    }
+
+    function toggleNotifications(checkbox) {
+      notificationsEnabled = checkbox.checked;
+      showNotification(`Notifications ${notificationsEnabled ? 'enabled' : 'disabled'}`);
+    }
+
+    function setNotificationDuration(button) {
+      const input = button.previousElementSibling;
+      const value = parseInt(input.value);
+      if (value >= 1000) {
+        notificationDuration = value;
+        showNotification(`Notification duration set to ${value}ms`);
+      } else {
+        showNotification('Duration must be at least 1000ms');
+      }
+    }
+
+    function createGrid() {
+      let grid = '';
+      for (let row = 1; row <= 10; row++) {
+        for (let col = 1; col <= 10; col++) {
+          grid += `<input type="text" data-cell="${String.fromCharCode(64 + col)}${row}" placeholder="">`;
+        }
+      }
+      return grid;
+    }
+
+    function initializeGrid(grid) {
+      grid.querySelectorAll('input').forEach(input => {
+        input.addEventListener('input', () => {
+          if (input.value.startsWith('=')) {
+            input.dataset.formula = input.value;
+          }
+        });
+      });
+    }
+
+    function serializeGrid(grid) {
+      const data = {};
+      grid.querySelectorAll('input').forEach(input => {
+        data[input.dataset.cell] = input.value;
+      });
+      return JSON.stringify(data);
+    }
+
+    function calculateSheet(button) {
+      const grid = button.parentElement.nextElementSibling.querySelector('.offixel-grid');
+      grid.querySelectorAll('input').forEach(input => {
+        if (input.dataset.formula && input.dataset.formula.startsWith('=SUM')) {
+          const range = input.dataset.formula.match(/SUM\((.+):(.+)\)/);
+          if (range) {
+            const [start, end] = [range[1], range[2]];
+            let sum = 0;
+            const startCol = start.charCodeAt(0) - 64;
+            const startRow = parseInt(start.slice(1));
+            const endCol = end.charCodeAt(0) - 64;
+            const endRow = parseInt(end.slice(1));
+            for (let row = startRow; row <= endRow; row++) {
+              for (let col = startCol; col <= endCol; col++) {
+                const cell = grid.querySelector(`[data-cell="${String.fromCharCode(64 + col)}${row}"]`);
+                if (cell && cell.value && !cell.value.startsWith('=')) {
+                  sum += parseFloat(cell.value) || 0;
+                }
+              }
+            }
+            input.value = sum;
+          }
+        }
+      });
+      showNotification('Calculated sheet');
+    }
+
+    function formatText(button, style) {
+      const textarea = button.parentElement.nextElementSibling.querySelector('textarea');
+      const selection = textarea.value.substring(textarea.selectionStart, textarea.selectionEnd);
+      if (style === 'bold') {
+        textarea.value = textarea.value.substring(0, textarea.selectionStart) + `**${selection}**` + textarea.value.substring(textarea.selectionEnd);
+      } else if (style === 'italic') {
+        textarea.value = textarea.value.substring(0, textarea.selectionStart) + `*${selection}*` + textarea.value.substring(textarea.selectionEnd);
+      }
+      showNotification(`Applied ${style} formatting`);
+    }
+
+    function initializePresento(canvas) {
+      const ctx = canvas.getContext('2d');
+      ctx.fillStyle = 'blue';
+      ctx.fillRect(50, 50, 100, 50);
+    }
+
+    function addSlide(button) {
+      const content = button.parentElement.nextElementSibling;
+      const p = content.querySelector('p');
+      const slideNum = parseInt(p.textContent.match(/\d+/)[0]) + 1;
+      p.textContent = `Slide ${slideNum}`;
+      showNotification(`Added slide ${slideNum}`);
+    }
+
+    let history = [];
+    let historyIndex = -1;
+
+    function loadPage(button) {
+      const input = button.previousElementSibling;
+      const url = input.value.trim();
+      const contentDiv = button.parentElement.nextElementSibling;
+      if (url) {
+        contentDiv.innerHTML = `Loading ${url}...<br>Content not available (simulated browser).`;
+        history.push(url);
+        historyIndex = history.length - 1;
+      } else {
+        contentDiv.innerHTML = 'Please enter a valid URL.';
+      }
+    }
+
+    function goBack(button) {
+      const contentDiv = button.parentElement.nextElementSibling;
+      if (historyIndex > 0) {
+        historyIndex--;
+        contentDiv.innerHTML = `Navigated to ${history[historyIndex]}<br>Content not available (simulated browser).`;
+      } else {
+        contentDiv.innerHTML = 'No previous page.';
+      }
+    }
+
+    let paintHistory = [];
+    let paintRedoStack = [];
+    let currentShape = 'free';
+    let brushSize = 2;
+
+    function initializeCanvas(canvas) {
+      const ctx = canvas.getContext('2d');
+      ctx.strokeStyle = 'black';
+      ctx.lineWidth = brushSize;
+      let isDrawing = false;
+      let startX, startY;
+
+      canvas.addEventListener('mousedown', (e) => {
+        isDrawing = true;
+        startX = e.offsetX;
+        startY = e.offsetY;
+        ctx.beginPath();
+        ctx.moveTo(startX, startY);
+        paintRedoStack = [];
+        paintHistory.push(canvas.toDataURL());
+      });
+
+      canvas.addEventListener('mousemove', (e) => {
+        if (isDrawing) {
+          if (currentShape === 'free') {
+            ctx.lineTo(e.offsetX, e.offsetY);
+            ctx.stroke();
+          } else {
+            const tempCanvas = document.createElement('canvas');
+            tempCanvas.width = canvas.width;
+            tempCanvas.height = canvas.height;
+            const tempCtx = tempCanvas.getContext('2d');
+            tempCtx.drawImage(canvas, 0, 0);
+            tempCtx.strokeStyle = ctx.strokeStyle;
+            tempCtx.lineWidth = ctx.lineWidth;
+            tempCtx.beginPath();
+            if (currentShape === 'line') {
+              tempCtx.moveTo(startX, startY);
+              tempCtx.lineTo(e.offsetX, e.offsetY);
+            } else if (currentShape === 'rect') {
+              tempCtx.rect(startX, startY, e.offsetX - startX, e.offsetY - startY);
+            } else if (currentShape === 'circle') {
+              const radius = Math.sqrt(Math.pow(e.offsetX - startX, 2) + Math.pow(e.offsetY - startY, 2));
+              tempCtx.arc(startX, startY, radius, 0, 2 * Math.PI);
+            }
+            tempCtx.stroke();
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            ctx.drawImage(tempCanvas, 0, 0);
+          }
+        }
+      });
+
+      canvas.addEventListener('mouseup', (e) => {
+        if (isDrawing && currentShape !== 'free') {
+          ctx.beginPath();
+          if (currentShape === 'line') {
+            ctx.moveTo(startX, startY);
+            ctx.lineTo(e.offsetX, e.offsetY);
+          } else if (currentShape === 'rect') {
+            ctx.rect(startX, startY, e.offsetX - startX, e.offsetY - startY);
+          } else if (currentShape === 'circle') {
+            const radius = Math.sqrt(Math.pow(e.offsetX - startX, 2) + Math.pow(e.offsetY - startY, 2));
+            ctx.arc(startX, startY, radius, 0, 2 * Math.PI);
+          }
+          ctx.stroke();
+          paintHistory.push(canvas.toDataURL());
+        }
+        isDrawing = false;
+        ctx.closePath();
+      });
+
+      canvas.addEventListener('mouseout', () => {
+        isDrawing = false;
+        ctx.closePath();
+      });
+    }
+
+    function setColor(color, button) {
+      const canvas = button.parentElement.nextElementSibling.querySelector('canvas');
+      const ctx = canvas.getContext('2d');
+      ctx.strokeStyle = color;
+    }
+
+    function setBrushSize(size, button) {
+      const canvas = button.parentElement.nextElementSibling.querySelector('canvas');
+      const ctx = canvas.getContext('2d');
+      brushSize = size === 'small' ? 2 : size === 'medium' ? 5 : 8;
+      ctx.lineWidth = brushSize;
+      showNotification(`Brush size set to ${size}`);
+    }
+
+    function setShape(shape, button) {
+      currentShape = shape;
+      showNotification(`Drawing mode: ${shape}`);
+    }
+
+    function undo(button) {
+      const canvas = button.parentElement.nextElementSibling.querySelector('canvas');
+      const ctx = canvas.getContext('2d');
+      if (paintHistory.length > 1) {
+        paintRedoStack.push(paintHistory.pop());
+        const img = new Image();
+        img.src = paintHistory[paintHistory.length - 1];
+        img.onload = () => {
+          ctx.clearRect(0, 0, canvas.width, canvas.height);
+          ctx.drawImage(img, 0, 0);
+        };
+        showNotification('Undo');
+      }
+    }
+
+    function redo(button) {
+      const canvas = button.parentElement.nextElementSibling.querySelector('canvas');
+      const ctx = canvas.getContext('2d');
+      if (paintRedoStack.length > 0) {
+        const img = new Image();
+        img.src = paintRedoStack.pop();
+        img.onload = () => {
+          ctx.clearRect(0, 0, canvas.width, canvas.height);
+          ctx.drawImage(img, 0, 0);
+          paintHistory.push(img.src);
+        };
+        showNotification('Redo');
+      }
+    }
+
+    function clearCanvas(button) {
+      const canvas = button.parentElement.nextElementSibling.querySelector('canvas');
+      const ctx = canvas.getContext('2d');
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      paintHistory.push(canvas.toDataURL());
+      showNotification('Canvas cleared');
+    }
+
+    function saveCanvas(button) {
+      saveFile(button, '', 'png');
+    }
+
+    function toggleStartMenu() {
+      const startMenu = document.getElementById('startMenu');
+      if (startMenu.classList.contains('open')) {
+        startMenu.classList.remove('open');
+        setTimeout(() => startMenu.style.display = 'none', 300);
+      } else {
+        startMenu.style.display = 'block';
+        setTimeout(() => startMenu.classList.add('open'), 10);
+      }
+    }
+
+    function toggleTheme() {
+      const body = document.body;
+      body.dataset.theme = body.dataset.theme === 'dark' ? 'light' : 'dark';
+      toggleStartMenu();
+    }
+
+    function changeWallpaper(button) {
+      const input = button.previousElementSibling;
+      const url = input.value.trim();
+      if (url) {
+        document.getElementById('desktop').style.backgroundImage = `url(${url})`;
+        showNotification('Wallpaper changed');
+      }
+    }
+
+    function updateClock() {
+      const now = new Date();
+      document.getElementById('clock').textContent = now.toLocaleTimeString();
+    }
+    setInterval(updateClock, 1000);
+    updateClock();
+  </script>
+</body>
+</html>
